@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">QRCodeReader</string>
+    <string name="tv_result">결과값 들어갈 자리</string>
+    <string name="tv_title">결과값 : </string>
+    <string name="btn_title">돌아가기</string>
+</resources>

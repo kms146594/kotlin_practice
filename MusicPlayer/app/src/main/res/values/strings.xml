@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Musicplayer</string>
+    <string name="start">재생</string>
+    <string name="pause">일시정지</string>
+    <string name="stop">재생 중지</string>
+
+    <string name="permission_required">player access is required to play.</string>
+    <string name="ok">OK</string>
+    <string name="permission_granted">Permission is granted. You can use the player now.</string>
+</resources>
