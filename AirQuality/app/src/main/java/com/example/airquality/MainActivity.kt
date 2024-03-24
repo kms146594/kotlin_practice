@@ -12,16 +12,25 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
-import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.PackageManagerCompat
 import com.example.airquality.databinding.ActivityMainBinding
+import com.example.airquality.retrofit.AirQualityResponse
+import com.example.airquality.retrofit.AirQualityService
+import com.example.airquality.retrofit.RetrofitConnection
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 import java.io.IOException
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.*
+
 
 class MainActivity : AppCompatActivity() {
 
@@ -45,7 +54,15 @@ class MainActivity : AppCompatActivity() {
         // 권한 확인
         checkAllPermission()
         updateUI()
+        setRefreshButton()
     }
+
+    private fun setRefreshButton() {
+        binding.btnRefresh.setOnClickListener{
+            updateUI()
+        }
+    }
+
     // 권한 확인
     private fun checkAllPermission() {
         // 위치서비스(GPS)가 켜져있는지 확인
@@ -79,6 +96,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
     // 모든 퍼미션이 허용되었는지 확인 -> 미허용 권한 존재 시 앱 종료
+    /**
+     *  @desc 런타임 권한을 요청하고 권한 요청에 따른 결과 반환
+     */
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -86,8 +106,10 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        // 요청 코드가 PERMISSION_CODE이고 요청한 퍼미션 개수 만큼 수신된 경우
-        if (requestCode == PERMISSION_REQUEST_CODE && grantResults.size == REQUIRED_PERMISSIONS.size)
+        // 요청 코드가 PERMISSION_CODE이고
+        // 요청한 퍼미션 개수 만큼 수신된 경우
+        if (requestCode == PERMISSION_REQUEST_CODE &&
+            grantResults.size == REQUIRED_PERMISSIONS.size)
         {
             var checkResult = true
             // 모든 퍼미션을 허용했는지 체크
@@ -99,7 +121,8 @@ class MainActivity : AppCompatActivity() {
             }
             // 위젯값을 가져올 수 있음
             if (checkResult) {
-
+                // 런타임 권한이 허용되었을 때도 updateUI 함수가 실행되어야 함
+                updateUI()
             } else {
                 // 퍼미션 거부 시 앱 종료
                 Toast.makeText(this@MainActivity,
@@ -110,6 +133,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
     // 위치 서비스가 꺼져 있다면 다이얼로그를 사용하여 위치 서비스를 설정하도록 하는 함수
+    /**
+     *  @desc LocationManager를 사용하기 위해서 권한 요청
+     */
     private fun showDialogForLocationServiceSetting() {
         // ActivityResultLauncher를 설정
         // 결과값을 반환해야 하는 인텐트를 실행할 수 있음
@@ -168,6 +194,7 @@ class MainActivity : AppCompatActivity() {
                         "${it.adminArea}" // 에 : 대한민국 서울특별시
             }
             // 2. 현재 미세먼지 농도 가져오고 UI 업데이트
+            getAirQualityData(latitude, longitude) //
 
         } else {
             Toast.makeText(this@MainActivity,
@@ -176,6 +203,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * @desc 위도와 경도를 기준으로 실제 주소 가져오기
+     */
     fun getCurrentAddress(latitude: Double, longitude: Double) : Address? {
         val geocoder = Geocoder(this, Locale.getDefault())
         // Address 객체는 주소와 관련된 여러 정보를 가지고 있습니다.
@@ -201,5 +231,80 @@ class MainActivity : AppCompatActivity() {
 
         val address: Address = addresses[0]
         return address
+    }
+
+    /**
+     * @desc 레트로핏 클래스를 이용하여 미세먼지 오염 정보를 가져옴
+     */
+    private fun getAirQualityData(latitude: Double, longitude: Double) {
+        // 레트로핏 객체를 이용해 AirQualityService 인터페이스 구현체를 가져올 수 있음
+        val retrofitAPI = RetrofitConnection.getInstance().create(
+            AirQualityService::class.java)
+
+        retrofitAPI.getAirQualityData(
+            latitude.toString(),
+            longitude.toString(),
+            "6a0f7de6-747a-4dc3-999a-536939020c63"
+        ).enqueue(object : Callback<AirQualityResponse> {
+            override fun onResponse(
+                call: Call<AirQualityResponse>,
+                response: Response<AirQualityResponse>
+            ){
+                //
+                if (response.isSuccessful) {
+                    Toast.makeText(this@MainActivity, "최신 정보 업데이트 완료!",
+                        Toast.LENGTH_SHORT).show()
+                    //
+                    response.body()?.let { updateAirUI(it) }
+                } else {
+                    Toast.makeText(this@MainActivity, "업데이트에 실패했습니다",
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onFailure(call: Call<AirQualityResponse>, t: Throwable) {
+                t.printStackTrace()
+                Toast.makeText(this@MainActivity, "업데이트에 실패했습니다",
+                    Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    /**
+     *  @desc 가져온 데이터 정보를 바탕으로 화면 업데이트
+     */
+    private fun updateAirUI(airQualityData: AirQualityResponse) {
+        val pollutionData = airQualityData.data.current.pollution
+
+        // 수치 지정 (가운데 숫자)
+        binding.tvCount.text = pollutionData.aqius.toString()
+
+        // 측정된 날짜 지정
+        // "2021-09-04T14:00:00.000z" 형식을 "2021-09-04 23:00"로 수정
+        val dateTime = ZonedDateTime.parse(pollutionData.ts).withZoneSameInstant(
+            ZoneId.of("Asia/Seoul"))
+            .toLocalDateTime()
+        val dateFormatError: DateTimeFormatter = DateTimeFormatter.ofPattern(
+            "yyyy-MM-dd HH:mm")
+        binding.tvCheckTime.text = dateTime.format(dateFormatError).toString()
+
+        when (pollutionData.aqius) {
+            in 0..50 -> {
+                binding.tvTitle.text = "좋음"
+                binding.imgBg.setImageResource(R.drawable.bg_good)
+            }
+            in 51..150 -> {
+                binding.tvTitle.text = "보통"
+                binding.imgBg.setImageResource(R.drawable.bg_soso)
+            }
+            in 151..200 -> {
+                binding.tvTitle.text = "나쁨"
+                binding.imgBg.setImageResource(R.drawable.bg_bad)
+            }
+            else -> {
+                binding.tvTitle.text = "매우 나쁨"
+                binding.imgBg.setImageResource(R.drawable.bg_worst)
+            }
+        }
     }
 }
