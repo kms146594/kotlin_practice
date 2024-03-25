@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- 화면에 모양을 그리는 드로어블 / shape 태그를 이용하여 생성 가능-->
+<!-- 둥근 모서리 직사각형 등 다양한 모양(선, 색상, 그라데이션)을 화면에 그릴 수 있음-->
+    <corners
+        android:radius="10dp"/>
+    <solid
+        android:color="@color/orange_transfer"/>
+
+</shape>

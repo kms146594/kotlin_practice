@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.ActivityResultCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -48,6 +50,9 @@ class MainActivity : AppCompatActivity() {
     // 위도와 경도를 가져올 때 필요 locationProvider
     lateinit var locationProvider: LocationProvider
 
+    var latitude: Double = 0.0
+    var longitude: Double = 0.0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
@@ -55,14 +60,15 @@ class MainActivity : AppCompatActivity() {
         checkAllPermission()
         updateUI()
         setRefreshButton()
-    }
 
+        setFAB()
+    }
+    // 업데이트 버튼을 통해 UI 업데이트
     private fun setRefreshButton() {
         binding.btnRefresh.setOnClickListener{
             updateUI()
         }
     }
-
     // 권한 확인
     private fun checkAllPermission() {
         // 위치서비스(GPS)가 켜져있는지 확인
@@ -119,7 +125,7 @@ class MainActivity : AppCompatActivity() {
                     break
                 }
             }
-            // 위젯값을 가져올 수 있음
+            // 위칫값을 가져올 수 있음
             if (checkResult) {
                 // 런타임 권한이 허용되었을 때도 updateUI 함수가 실행되어야 함
                 updateUI()
@@ -178,11 +184,12 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI() {
         locationProvider = LocationProvider(this@MainActivity)
 
-        // 위도와 경도의 정보를 가져옵니다.
-        val latitude: Double = locationProvider.getLocationLatitude()
-        val longitude: Double = locationProvider.getLocationLongitude()
-
+        // MapActivity로 위치를 보내고, 지정된 위도,경도를 받아와 함수를 실행해야 함.
+        // 위도 경도를 클래스 객체 변수로 격상
         if (latitude != 0.0 || longitude != 0.0) {
+            // 위도와 경도의 정보를 가져옵니다.
+            latitude = locationProvider.getLocationLatitude()
+            longitude = locationProvider.getLocationLongitude()
 
             // 1. 현재 위치를 가져오고 UI 업데이트
             // 현재 위치를 가져오기
@@ -241,6 +248,15 @@ class MainActivity : AppCompatActivity() {
         val retrofitAPI = RetrofitConnection.getInstance().create(
             AirQualityService::class.java)
 
+        /** 구현된 AirQualityService 인터페이스 객체(retrofitAPI)를 이용하여 Call 객체를 만든 후
+         *  enqueue() 함수를 실행하여 서버에 API 요청을 보냄
+         *  retrofitAPI.getAirQualityData()는 유일한 함수 반환 값은 Call<AirQualityResponse>
+         */
+        // 레트로핏에서 요청을 처리하는 Call 객체는 HTTP 요청을 보내는 두가지 방식을 제공
+        // execute(): 동기적으로 요청과 응답. 함수가 실행되는 스레드에서 실행 -> 메인 스레드에서
+        // 함수 실행 시 응답 전까지 UI가 블로킹 됨 = 추천 X
+        // enqueue(retrofit2): 비동기적 백그라운드 스레드에서 요청 / 응답 시 등록된 콜백 함수 실행
+        // 메인스레드에서 실행해도 백그라운드 스레드에서 요청 처리되기 때문에 UI 블로킹 X
         retrofitAPI.getAirQualityData(
             latitude.toString(),
             longitude.toString(),
@@ -250,11 +266,11 @@ class MainActivity : AppCompatActivity() {
                 call: Call<AirQualityResponse>,
                 response: Response<AirQualityResponse>
             ){
-                //
+                // 정상적인 Response가 왔다면 UI 업데이트
                 if (response.isSuccessful) {
                     Toast.makeText(this@MainActivity, "최신 정보 업데이트 완료!",
                         Toast.LENGTH_SHORT).show()
-                    //
+                    // response.body()가 null이 아니면 updateAirUI()
                     response.body()?.let { updateAirUI(it) }
                 } else {
                     Toast.makeText(this@MainActivity, "업데이트에 실패했습니다",
@@ -280,6 +296,8 @@ class MainActivity : AppCompatActivity() {
         binding.tvCount.text = pollutionData.aqius.toString()
 
         // 측정된 날짜 지정
+        // utc 시간대 -> 한국 시간보다 느림, ZonedDateTime 클래스를 이용하여 서울 시간대 적용
+        // DateTimeFormatter.ofPattern 함수를 이용하여 형식 수정
         // "2021-09-04T14:00:00.000z" 형식을 "2021-09-04 23:00"로 수정
         val dateTime = ZonedDateTime.parse(pollutionData.ts).withZoneSameInstant(
             ZoneId.of("Asia/Seoul"))
@@ -288,6 +306,7 @@ class MainActivity : AppCompatActivity() {
             "yyyy-MM-dd HH:mm")
         binding.tvCheckTime.text = dateTime.format(dateFormatError).toString()
 
+        // aqius 값은 미국 기준 AQI(대기지수) 의미, 위 기준으로 범위별 농도에 따른 텍스트와 배경 설정
         when (pollutionData.aqius) {
             in 0..50 -> {
                 binding.tvTitle.text = "좋음"
@@ -305,6 +324,35 @@ class MainActivity : AppCompatActivity() {
                 binding.tvTitle.text = "매우 나쁨"
                 binding.imgBg.setImageResource(R.drawable.bg_worst)
             }
+        }
+    }
+
+    /**
+     *  액티비티와 액티비티 사이에서 데이터는 양방향으로 이동할 수 있다. -> registerForActivityResult
+     */
+    // 해당 변수의 타입은 ActivityResultLauncher이다 : 결과를 받아와야 하는 액티비티를 실행할 때 사용
+    // registerForActivityResult() 함수에 두번째 인수로 콜백을 등록 -> 해당 액티비티가 결과를 반환시 실행
+    var startActivityForResult = registerForActivityResult(ActivityResultContracts
+        .StartActivityForResult(), object : ActivityResultCallback<ActivityResult> {
+        override fun onActivityResult(result: ActivityResult) {
+            if (result?.resultCode ?: 0 == Activity.RESULT_OK) {
+                // 지도에서 위도와 경도를 반환, 객체 변수에 각각 저장
+                latitude = result?.data?.getDoubleExtra("latitude", 0.0) ?: 0.0
+                longitude = result?.data?.getDoubleExtra("longitude", 0.0) ?: 0.0
+                updateUI()
+                // 해당 위/경도를 이용해 미세먼지 농도를 구함
+            }
+        }
+    })
+    // 현재 위도와 경도 정보를 담아 지도 페이지로 보냄
+    // startMapActivityResult 변수를 launch하면 지도 페이지로 이동하고,
+    // 등록해둔 onActivityResult 콜백에 보낸값이 전달됨
+    private fun setFAB() {
+        binding.fab.setOnClickListener{
+            val intent = Intent(this, MapActivity::class.java)
+            intent.putExtra("currentLat", latitude)
+            intent.putExtra("currentLong", longitude)
+            startActivityForResult.launch(intent)
         }
     }
 }
