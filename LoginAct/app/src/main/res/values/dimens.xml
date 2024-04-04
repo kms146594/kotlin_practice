@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <dimen name="login_inside">5dp</dimen>
+    <dimen name="login_outside">45dp</dimen>
+
+</resources>
