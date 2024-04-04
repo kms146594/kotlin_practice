@@ -115,6 +115,7 @@
                 android:text="ID/PW 찾기"
                 android:textSize="13sp"
                 android:layout_weight="1"
+                android:background="#00FF0000"
                 android:gravity="center|end" />
         </LinearLayout>
 
